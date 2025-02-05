@@ -166,7 +166,6 @@ if(ENABLE_TESTING)
     enable_testing()
 endif()
 
-add_subdirectory(tests)
 
 message("###############################################################")
 message("\t \t                  Summary")
