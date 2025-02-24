@@ -1,25 +1,42 @@
+/*** includes ***/
 #include <ctype.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
+#define CTRL_KEY(k) ((k) & 0x1f)
 
 #ifdef _WIN32
 #include <io.h>
-#define STDIN_FILENO 0
+#define STDIN_FILENO  0
+#define STDOUT_FILENO 1
 #include <windows.h>
 static DWORD originalConsoleMode;
+struct editorConfig {
+    HANDLE hStdin;
+    HANDLE hStdout;
+    DWORD  originalConsoleMode;
+};
+
+struct editorConfig E;
 #else
 #include <termios.h>
 static struct termios orig_termios;
 #include <unistd.h>
+struct editorConfig {
+    struct termios orig_termios;
+};
+struct editorConfig E;
 #endif
+/*** data ***/
 
 void die(const char* s)
 {
+    _write(STDOUT_FILENO, "\x1b[2J", 4);
+    _write(STDOUT_FILENO, "\x1b[H", 3);
     perror(s);
     exit(1);
 }
-
+/*** terminal ***/
 void restoreConsoleMode(HANDLE hConsole, DWORD originalMode)
 {
     if (!SetConsoleMode(hConsole, originalMode))
@@ -27,7 +44,7 @@ void restoreConsoleMode(HANDLE hConsole, DWORD originalMode)
         die("SetConsoleMode");
     }
 }
-
+/*** terminal ***/
 void disableRawMode()
 {
 #ifdef _WIN32
@@ -38,7 +55,7 @@ void disableRawMode()
         die("tcsetattr");
 #endif
 }
-
+/*** terminal ***/
 void enableRawMode()
 {
 #ifdef _WIN32
@@ -72,25 +89,56 @@ void enableRawMode()
 #endif
 }
 
+/*** output ***/
+void editorDrawRows()
+{
+    int y;
+    for (y = 0; y < 24; y++)
+    {
+        _write(STDOUT_FILENO, "~\r\n", 3);
+    }
+}
+
+void editorRefreshScreen()
+{
+    _write(STDOUT_FILENO, "\x1b[2J", 4);
+    _write(STDOUT_FILENO, "\x1b[H", 3);
+    editorDrawRows();
+    _write(STDOUT_FILENO, "\x1b[H", 3);
+}
+/*** input ***/
+char editorReadKey()
+{
+    int  nread;
+    char c;
+    while (nread = _read(STDIN_FILENO, &c, 1) != 1)
+    {
+        if (nread == -1 && errno != EAGAIN)
+            die("read");
+    }
+    return c;
+}
+/*** input ***/
+void editorProcessKeypress()
+{
+    char c = editorReadKey();
+    switch (c)
+    {
+    case CTRL_KEY('q'):
+        _write(STDOUT_FILENO, "\x1b[2J", 4);
+        _write(STDOUT_FILENO, "\x1b[H", 3);
+        exit(0);
+        break;
+    }
+}
+
 int main()
 {
     enableRawMode();
     while (1)
     {
-        char c = '\0';
-        _read(STDIN_FILENO, &c, 1);
-        if (_read(STDIN_FILENO, &c, 1) == -1 && errno != EAGAIN)
-            die("read");
-        if (iscntrl(c))
-        {
-            printf("%d\r\n", c);
-        }
-        else
-        {
-            printf("%d ('%c')\r\n", c, c);
-        }
-        if (c == 'q')
-            break;
+        editorRefreshScreen();
+        editorProcessKeypress();
     }
     return 0;
 }
